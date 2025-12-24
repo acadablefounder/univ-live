@@ -1,4 +1,3 @@
-// src/contexts/AuthProvider.tsx
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { User } from "firebase/auth";
 import { onAuthStateChanged } from "firebase/auth";
@@ -10,9 +9,9 @@ export type UserRole = "ADMIN" | "EDUCATOR" | "STUDENT";
 export type AppUserProfile = {
   uid: string;
   role: UserRole;
-  educatorId?: string;   
-  tenantSlug?: string;   // For Educators (they usually own just one)
-  enrolledTenants?: string[]; // ✅ NEW: For Students (list of joined coachings)
+  educatorId?: string;
+  tenantSlug?: string;         // ✅ KEPT for backward compatibility
+  enrolledTenants?: string[];  // ✅ NEW: Array of slugs
   displayName?: string;
   email?: string;
 };
@@ -25,7 +24,7 @@ type AuthContextValue = {
   role: UserRole | null;
   educatorId: string | null;
   tenantSlug: string | null;
-  enrolledTenants: string[]; // ✅ Expose this
+  enrolledTenants: string[]; 
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -36,19 +35,26 @@ async function fetchProfile(uid: string): Promise<AppUserProfile | null> {
   if (!snap.exists()) return null;
   const data = snap.data() as any;
 
-  // basic hardening
   const role = data.role as UserRole | undefined;
   if (role !== "ADMIN" && role !== "EDUCATOR" && role !== "STUDENT") return null;
+
+  // --- 🛡️ SAFETY LOGIC START ---
+  // If database has array, use it. If not, use the old string wrapped in an array.
+  let enrolledTenants: string[] = [];
+  
+  if (Array.isArray(data.enrolledTenants)) {
+    enrolledTenants = data.enrolledTenants;
+  } else if (typeof data.tenantSlug === "string") {
+    enrolledTenants = [data.tenantSlug]; // <--- This saves old users!
+  }
+  // --- 🛡️ SAFETY LOGIC END ---
 
   return {
     uid,
     role,
     educatorId: typeof data.educatorId === "string" ? data.educatorId : undefined,
     tenantSlug: typeof data.tenantSlug === "string" ? data.tenantSlug : undefined,
-    // ✅ Handle legacy data (string) vs new data (array)
-    enrolledTenants: Array.isArray(data.enrolledTenants) 
-      ? data.enrolledTenants 
-      : (data.tenantSlug ? [data.tenantSlug] : []), 
+    enrolledTenants, // Always returns an array now
     displayName: typeof data.displayName === "string" ? data.displayName : undefined,
     email: typeof data.email === "string" ? data.email : undefined,
   };
@@ -62,13 +68,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setFirebaseUser(u);
-
       if (!u) {
         setProfile(null);
         setLoading(false);
         return;
       }
-
       setLoading(true);
       try {
         const p = await fetchProfile(u.uid);
@@ -79,7 +83,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
       }
     });
-
     return () => unsub();
   }, []);
 
@@ -92,7 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       role: profile?.role ?? null,
       educatorId: profile?.educatorId ?? null,
       tenantSlug: profile?.tenantSlug ?? null,
-      enrolledTenants: profile?.enrolledTenants ?? [],
+      enrolledTenants: profile?.enrolledTenants || [],
     };
   }, [firebaseUser, profile, loading]);
 
@@ -101,8 +104,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error("useAuth must be used within AuthProvider");
-  }
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
 }

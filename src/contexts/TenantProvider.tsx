@@ -1,4 +1,3 @@
-// src/contexts/TenantProvider.tsx
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { getTenantSlugFromHostname } from "@/lib/tenant";
 import { db, auth } from "@/lib/firebase";
@@ -27,45 +26,46 @@ type TenantContextValue = {
 const TenantContext = createContext<TenantContextValue | null>(null);
 
 export function TenantProvider({ children }: { children: React.ReactNode }) {
-  const { profile } = useAuth(); // AuthProvider MUST wrap TenantProvider
+  const { profile } = useAuth();
   const [tenant, setTenant] = useState<TenantProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   const tenantSlug = getTenantSlugFromHostname();
   const isTenantDomain = !!tenantSlug;
 
-  // 1. Fetch Tenant Data (Coaching info)
+  // 1. Load Tenant Data (Standard logic - unchanged)
   useEffect(() => {
     let mounted = true;
     async function loadTenant() {
       setLoading(true);
       setTenant(null);
-      
       if (!tenantSlug) {
         setLoading(false);
         return;
       }
 
       try {
-        const q = query(collection(db, "educators"), where("slug", "==", tenantSlug));
-        const snap = await getDocs(q);
-        
-        if (mounted) {
-          if (!snap.empty) {
-            const data = snap.docs[0].data();
-            setTenant({
-              educatorId: snap.docs[0].id,
-              tenantSlug: data.slug,
-              coachingName: data.coachingName,
-              tagline: data.tagline,
-              websiteConfig: data.websiteConfig,
-            });
-          } else {
-            setTenant(null);
-          }
+        const q = query(collection(db, "educators"), where("slug", "==", tenantSlug)); // Note: Ensure field is 'slug' or 'tenantSlug' based on your DB
+        const snaps = await getDocs(q);
+        if (!mounted) return;
+
+        if (!snaps.empty) {
+          const d = snaps.docs[0].data() as any;
+          setTenant({
+            educatorId: snaps.docs[0].id,
+            tenantSlug: d.slug || d.tenantSlug || tenantSlug, // Handle variations
+            coachingName: d.coachingName || "",
+            tagline: d.tagline || "",
+            contact: d.contact || {},
+            socials: d.socials || {},
+            websiteConfig: d.websiteConfig || null,
+          });
+        } else {
+          setTenant(null);
         }
       } catch (err) {
         console.error("Failed to load tenant", err);
+        setTenant(null);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -75,26 +75,31 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     return () => { mounted = false; };
   }, [tenantSlug]);
 
-  // 2. Security Check: Enforce Tenant Membership for Students
+  // 2. Enforce Security (UPDATED & SAFE)
   useEffect(() => {
-    if (!profile || !isTenantDomain) return;
+    if (!profile || !isTenantDomain || !tenantSlug) return;
 
     if (profile.role === "STUDENT") {
-      // ✅ NEW: Check Array
-      const enrolledList = profile.enrolledTenants || [];
-      // Fallback for old data
-      const legacyTenant = profile.tenantSlug;
       
-      const isEnrolled = enrolledList.includes(tenantSlug!) || legacyTenant === tenantSlug;
+      // --- 🛡️ SAFETY LOGIC START ---
+      // 1. Check New Array
+      const enrolledList = profile.enrolledTenants || [];
+      
+      // 2. Check Old String (For Legacy Users)
+      const legacyMatch = profile.tenantSlug === tenantSlug;
+      
+      // 3. Allow if EITHER is true
+      const isAuthorized = enrolledList.includes(tenantSlug) || legacyMatch;
+      // --- 🛡️ SAFETY LOGIC END ---
 
-      if (!isEnrolled) {
+      if (!isAuthorized) {
         (async () => {
           try {
             await signOut(auth);
           } catch (e) {
-            // ignore
+             // ignore
           } finally {
-            toast.error("You are not registered with this coaching. Please register first.");
+            toast.error("You are not registered with this coaching institute. Please Register first.");
           }
         })();
       }
@@ -113,8 +118,6 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
 
 export function useTenant() {
   const ctx = useContext(TenantContext);
-  if (!ctx) {
-    throw new Error("useTenant must be used within TenantProvider");
-  }
+  if (!ctx) throw new Error("useTenant must be used within TenantProvider");
   return ctx;
 }

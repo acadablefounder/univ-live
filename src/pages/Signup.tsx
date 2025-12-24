@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Eye, EyeOff, ArrowRight, GraduationCap, Building2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,22 +9,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { useTenant } from "@/contexts/TenantProvider";
 
-// Firebase imports
-import { 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword, 
-  updateProfile 
-} from "firebase/auth";
-import { 
-  doc, 
-  setDoc, 
-  updateDoc, 
-  arrayUnion, 
-  getDoc 
-} from "firebase/firestore";
+// Firebase
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { doc, setDoc, updateDoc, arrayUnion, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 
-// Helper to make URL-friendly slugs
+// Helpers
 function slugify(text: string) {
   return text.toString().toLowerCase().trim().replace(/\s+/g, '-').replace(/[^\w\-]+/g, '').replace(/\-\-+/g, '-');
 }
@@ -50,7 +40,7 @@ export default function Signup() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!agreed) return toast.error("Please agree to the terms and conditions");
+    if (!agreed) return toast.error("Please agree to the terms");
     
     setLoading(true);
 
@@ -58,22 +48,25 @@ export default function Signup() {
       if (role === "student") {
         // --- STUDENT SIGNUP LOGIC ---
         if (!isTenantDomain || !tenant) {
-          throw new Error("Students must sign up on a specific coaching website link.");
+          toast.error("Students must sign up on a specific coaching website link.");
+          setLoading(false);
+          return;
         }
 
         try {
-            // 1. Try to create a NEW user
+            // A. TRY NORMAL SIGNUP
             const userCred = await createUserWithEmailAndPassword(auth, email, password);
             const user = userCred.user;
             
             await updateProfile(user, { displayName: fullName });
 
-            // Create new Student Doc with ARRAY of tenants
+            // Create new Student Doc
             await setDoc(doc(db, "users", user.uid), {
                 email,
                 displayName: fullName,
                 role: "STUDENT",
-                enrolledTenants: [tenantSlug], // ✅ Initialize array
+                enrolledTenants: [tenantSlug], // Start with array
+                tenantSlug: tenantSlug, // Keep legacy field just in case
                 createdAt: new Date().toISOString()
             });
 
@@ -81,25 +74,26 @@ export default function Signup() {
             navigate("/"); 
 
         } catch (error: any) {
-            // 2. HANDLE EXISTING USER (The Magic Logic)
+            // B. HANDLE "EMAIL EXISTS" -> MULTI-TENANT ADDITION
             if (error.code === 'auth/email-already-in-use') {
                 
-                // Try to login with the password they just entered
                 try {
+                    // 1. Try to Login with the provided password
                     const userCred = await signInWithEmailAndPassword(auth, email, password);
                     const user = userCred.user;
 
-                    // Check if they are actually a student
+                    // 2. Check if they are a student
                     const userDocRef = doc(db, "users", user.uid);
                     const userDoc = await getDoc(userDocRef);
 
                     if (userDoc.exists() && userDoc.data().role === "STUDENT") {
-                        // ✅ User exists and password matched. Add this tenant to their list.
+                        
+                        // 3. Add this tenant to their list
                         await updateDoc(userDocRef, {
-                            enrolledTenants: arrayUnion(tenantSlug) // ✅ Add current coaching to list
+                            enrolledTenants: arrayUnion(tenantSlug) 
                         });
                         
-                        toast.success("Account already exists. You have been enrolled in this coaching!");
+                        toast.success(`Welcome back! You have been enrolled in ${tenant.coachingName || 'this coaching'}.`);
                         navigate("/");
                     } else {
                         throw new Error("This email is registered as an Educator. Cannot join as Student.");
@@ -107,17 +101,17 @@ export default function Signup() {
 
                 } catch (loginError: any) {
                     if (loginError.code === 'auth/wrong-password') {
-                        throw new Error("Account exists, but password was incorrect. Please Login instead.");
+                        throw new Error("You already have an account, but the password entered is incorrect. Please Login.");
                     }
-                    throw loginError; // Rethrow other errors
+                    throw loginError; 
                 }
             } else {
-                throw error; // Rethrow real errors
+                throw error; // Throw other errors normally
             }
         }
         
       } else {
-        // --- EDUCATOR SIGNUP LOGIC (Standard) ---
+        // --- EDUCATOR SIGNUP (Unchanged) ---
         if (!coachingName) throw new Error("Coaching Name is required");
 
         const userCred = await createUserWithEmailAndPassword(auth, email, password);
@@ -126,29 +120,25 @@ export default function Signup() {
 
         await updateProfile(user, { displayName: fullName });
 
-        // Create Educator Doc
         await setDoc(doc(db, "users", user.uid), {
             email,
             displayName: fullName,
             role: "EDUCATOR",
             phone,
-            tenantSlug: generatedSlug, // Educators have one main slug
+            tenantSlug: generatedSlug,
             coachingName,
             createdAt: new Date().toISOString()
         });
 
-        // Create the Educator Record
         await setDoc(doc(db, "educators", user.uid), {
             email,
             coachingName,
             slug: generatedSlug,
-            websiteConfig: {
-                // Default config...
-            }
+            websiteConfig: {}
         });
         
-        toast.success("Academy created! Redirecting...");
-        window.location.href = `http://${generatedSlug}.localhost:5173/dashboard`; 
+        toast.success("Academy created!");
+        window.location.href = `http://${generatedSlug}.localhost:5173/dashboard`;
       }
 
     } catch (error: any) {
@@ -159,8 +149,8 @@ export default function Signup() {
     }
   };
 
+  // ... (JSX is the same as before, no changes needed) ...
   return (
-    // ... (Your existing JSX remains exactly the same)
     <div className="min-h-screen grid lg:grid-cols-2">
       {/* Left Side - Form */}
       <div className="flex items-center justify-center p-8 bg-background">
@@ -285,6 +275,7 @@ export default function Signup() {
         </motion.div>
       </div>
 
+      {/* Right Side - Visuals */}
       <div className="hidden lg:flex relative overflow-hidden bg-muted">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-accent/20" />
         <div className="relative z-10 flex flex-col items-center justify-center h-full p-12 text-center">
@@ -293,7 +284,7 @@ export default function Signup() {
                   <Building2 className="h-20 w-20 text-primary mb-6" />
                   <h2 className="text-3xl font-bold mb-4">Build Your Brand</h2>
                   <p className="text-lg text-muted-foreground max-w-md">
-                    Create your own white-labeled coaching website in minutes.
+                    Create your own white-labeled coaching website in minutes. Manage students, tests, and content all in one place.
                   </p>
                 </>
             ) : (
@@ -301,7 +292,7 @@ export default function Signup() {
                   <GraduationCap className="h-20 w-20 text-primary mb-6" />
                   <h2 className="text-3xl font-bold mb-4">Master Your Subjects</h2>
                   <p className="text-lg text-muted-foreground max-w-md">
-                    Join top educators and access premium course material.
+                    Join top educators, access premium course material, and track your progress with advanced analytics.
                   </p>
                 </>
             )}
