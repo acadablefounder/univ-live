@@ -1,17 +1,15 @@
+// src/contexts/TenantProvider.tsx
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { getTenantSlugFromHostname } from "@/lib/tenant";
-import { db } from "@/lib/firebase";
+import { db } from "@/lib/firebase"; // Removed 'auth' and 'signOut'
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthProvider";
 
-// Define the shape of the Tenant Data
 export type TenantProfile = {
   educatorId: string;
   tenantSlug: string;
   coachingName?: string;
   tagline?: string;
-  contact?: { phone?: string; email?: string; address?: string };
-  socials?: Record<string, string | null>;
   websiteConfig?: any;
 };
 
@@ -25,21 +23,20 @@ type TenantContextValue = {
 const TenantContext = createContext<TenantContextValue | null>(null);
 
 export function TenantProvider({ children }: { children: React.ReactNode }) {
-  const { profile } = useAuth(); // AuthProvider MUST wrap TenantProvider
+  const { profile } = useAuth();
   const [tenant, setTenant] = useState<TenantProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   const tenantSlug = getTenantSlugFromHostname();
   const isTenantDomain = !!tenantSlug;
 
-  // 1. Load Tenant Data (Coaching Info)
+  // 1. Data Loading (KEEP THIS)
   useEffect(() => {
     let mounted = true;
     async function loadTenant() {
       setLoading(true);
       setTenant(null);
       
-      // If we are on main domain (localhost or univ.live), no tenant to load
       if (!tenantSlug) {
         setLoading(false);
         return;
@@ -70,8 +67,8 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     return () => { mounted = false; };
   }, [tenantSlug]);
 
-  // NOTE: The previous security useEffect that forced signOut is REMOVED.
-  // Security is now handled by the StudentRoute component.
+  // ❌ THE SECURITY USEEFFECT IS GONE FROM HERE.
+  // It is now handled by StudentRoute.tsx only.
 
   const value: TenantContextValue = {
     tenant,
