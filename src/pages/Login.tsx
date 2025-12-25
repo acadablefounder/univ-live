@@ -74,18 +74,18 @@ export default function Login() {
              throw new Error("Students must login from their specific coaching website URL.");
         }
 
-        navigate("/"); // Go to Student Home
+        navigate("/student"); // Go to Student Home
 
       } else {
         // --- EDUCATOR LOGIN ---
         if (userData.role !== "EDUCATOR" && userData.role !== "ADMIN") {
            throw new Error("This email is registered as a Student.");
         }
-        navigate("/dashboard");
+        navigate("/educator");
       }
       
       toast.success("Welcome back!");
-      navigate("/student");
+      
 
     } catch (error: any) {
       console.error("Login error:", error);
