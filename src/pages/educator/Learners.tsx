@@ -14,12 +14,12 @@ import {
   Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner"; // Assuming 'sonner' for toasts based on snippets
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,7 +44,8 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import EmptyState from "@/components/educator/EmptyState";
 
-// Firebase
+// Firebase Imports
+import { onAuthStateChanged, User } from "firebase/auth";
 import {
   collection,
   doc,
@@ -57,18 +58,19 @@ import {
   getDocs,
   where,
 } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 
-// --- Types ---
+// --- Types based on your Data Structure ---
 type Student = {
-  id: string;
+  id: string; // The Document ID (usually same as uid in your case)
+  uid: string;
   name: string;
   email: string;
-  phone?: string;
-  city?: string;
-  status: "active" | "inactive";
-  createdAt: Timestamp | null;
+  status: "ACTIVE" | "INACTIVE"; // Matches your DB format
+  joinedAt: Timestamp | null;    // Matches your DB field
+  phone?: string;                // Optional fields
   photoURL?: string;
+  city?: string;
 };
 
 type Attempt = {
@@ -80,50 +82,82 @@ type Attempt = {
 };
 
 export default function Learners() {
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
 
-  // Selection State for "View Details"
+  // Filters
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "ACTIVE" | "INACTIVE">("all");
+
+  // Selection State
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [loadingAttempts, setLoadingAttempts] = useState(false);
 
-  // --- 1. Fetch All Learners (Real-time) ---
+  // --- 1. Fetch Students from Sub-collection ---
   useEffect(() => {
-    // Query: Get all students, ordered by newest first
-    const q = query(collection(db, "students"), orderBy("createdAt", "desc"));
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setCurrentUser(user);
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const fetched: Student[] = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as Student[];
-        setStudents(fetched);
-        setLoading(false);
-      },
-      (error) => {
-        console.error("Error fetching students:", error);
-        toast.error("Failed to load learners.");
+        // Reference: educators -> {uid} -> students
+        const studentsRef = collection(db, "educators", user.uid, "students");
+        
+        // Order by joinedAt desc so newest students appear first
+        const q = query(studentsRef, orderBy("joinedAt", "desc"));
+
+        const unsubscribeSnapshot = onSnapshot(
+          q,
+          (snapshot) => {
+            const fetched: Student[] = snapshot.docs.map((doc) => {
+              const data = doc.data();
+              return {
+                id: doc.id,
+                uid: data.uid || doc.id,
+                name: data.name || "Unknown Name",
+                email: data.email || "",
+                status: data.status || "ACTIVE", 
+                joinedAt: data.joinedAt || null,
+                phone: data.phone || "",
+                photoURL: data.photoURL || "",
+                city: data.city || "",
+              };
+            }) as Student[];
+            setStudents(fetched);
+            setLoading(false);
+          },
+          (error) => {
+            console.error("Error fetching students:", error);
+            setLoading(false);
+          }
+        );
+        return () => unsubscribeSnapshot();
+      } else {
+        // No user logged in
+        setStudents([]);
         setLoading(false);
       }
-    );
+    });
 
-    return () => unsubscribe();
+    return () => unsubscribeAuth();
   }, []);
 
   // --- 2. Actions ---
 
-  // Toggle Status (Active <-> Inactive)
+  // Toggle Status (ACTIVE <-> INACTIVE)
   const toggleStatus = async (student: Student) => {
-    const newStatus = student.status === "active" ? "inactive" : "active";
+    if (!currentUser) return;
+
+    const newStatus = student.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
     try {
-      await updateDoc(doc(db, "students", student.id), {
+      // Path: educators/{uid}/students/{studentDocId}
+      const studentDocRef = doc(db, "educators", currentUser.uid, "students", student.id);
+      
+      await updateDoc(studentDocRef, {
         status: newStatus,
       });
+      
       toast.success(`Student marked as ${newStatus}`);
     } catch (err) {
       console.error(err);
@@ -133,28 +167,31 @@ export default function Learners() {
 
   // Delete Student
   const handleDelete = async (studentId: string) => {
-    if (!confirm("Are you sure? This will delete the student and their data.")) return;
+    if (!currentUser) return;
+    if (!confirm("Are you sure? This will remove the student from your list.")) return;
+    
     try {
-      await deleteDoc(doc(db, "students", studentId));
-      toast.success("Student deleted successfully");
+      const studentDocRef = doc(db, "educators", currentUser.uid, "students", studentId);
+      await deleteDoc(studentDocRef);
+      toast.success("Student removed successfully");
     } catch (err) {
       console.error(err);
       toast.error("Failed to delete student");
     }
   };
 
-  // View Performance (Fetch Attempts)
+  // View Performance
   const handleViewPerformance = async (student: Student) => {
     setSelectedStudent(student);
     setLoadingAttempts(true);
     setAttempts([]);
 
     try {
-      // Assuming attempts are stored in a root collection or subcollection. 
-      // Adjust path if your attempts are inside `students/{id}/attempts`
+      // NOTE: Adjust "attempts" path if it's also nested or separate
+      // Assuming attempts are global but linked to studentId
       const q = query(
         collection(db, "attempts"), 
-        where("studentId", "==", student.id),
+        where("studentId", "==", student.uid), // Using the UID from the student object
         orderBy("createdAt", "desc")
       );
       
@@ -162,8 +199,7 @@ export default function Learners() {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Attempt[];
       setAttempts(data);
     } catch (err) {
-      console.error(err);
-      // Optional: attempts might not exist yet
+      console.error("Error loading attempts", err);
     } finally {
       setLoadingAttempts(false);
     }
@@ -173,10 +209,12 @@ export default function Learners() {
   const filteredStudents = useMemo(() => {
     return students.filter((s) => {
       const matchesSearch =
-        s.name.toLowerCase().includes(search.toLowerCase()) ||
-        s.email.toLowerCase().includes(search.toLowerCase());
+        (s.name?.toLowerCase() || "").includes(search.toLowerCase()) ||
+        (s.email?.toLowerCase() || "").includes(search.toLowerCase());
+      
       const matchesStatus =
         statusFilter === "all" ? true : s.status === statusFilter;
+        
       return matchesSearch && matchesStatus;
     });
   }, [students, search, statusFilter]);
@@ -198,7 +236,7 @@ export default function Learners() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Learners</h1>
           <p className="text-sm text-muted-foreground">
-            Manage your students, view performance, and control access.
+            Manage your registered students.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -206,7 +244,7 @@ export default function Learners() {
              Total: {students.length}
            </Badge>
            <Badge variant="secondary" className="h-8 px-3 bg-green-100 text-green-700 dark:bg-green-900/30">
-             Active: {students.filter(s => s.status === 'active').length}
+             Active: {students.filter(s => s.status === 'ACTIVE').length}
            </Badge>
         </div>
       </div>
@@ -233,22 +271,22 @@ export default function Learners() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="active">Active Only</SelectItem>
-              <SelectItem value="inactive">Inactive Only</SelectItem>
+              <SelectItem value="ACTIVE">Active Only</SelectItem>
+              <SelectItem value="INACTIVE">Inactive Only</SelectItem>
             </SelectContent>
           </Select>
         </CardContent>
       </Card>
 
-      {/* Main Content */}
+      {/* List */}
       {filteredStudents.length === 0 ? (
         <EmptyState
           icon={UserX}
-          title="No learners found"
+          title={search ? "No matching learners" : "No learners yet"}
           description={
             search
-              ? "No students match your search filters."
-              : "You haven't added any students yet."
+              ? "Try adjusting your search or filters."
+              : "Students will appear here once they join your institute."
           }
         />
       ) : (
@@ -263,38 +301,35 @@ export default function Learners() {
               <Card className="hover:shadow-md transition-all">
                 <CardContent className="p-4 flex items-center justify-between gap-4">
                   
-                  {/* Left: Info */}
+                  {/* Left: Student Info */}
                   <div className="flex items-center gap-4 overflow-hidden">
                     <Avatar className="h-10 w-10 border">
                       <AvatarImage src={student.photoURL} />
-                      <AvatarFallback>{student.name.charAt(0)}</AvatarFallback>
+                      <AvatarFallback>{student.name?.charAt(0) || "S"}</AvatarFallback>
                     </Avatar>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                          <h3 className="font-semibold truncate">{student.name}</h3>
                          <Badge 
-                           variant={student.status === "active" ? "default" : "secondary"}
+                           variant={student.status === "ACTIVE" ? "default" : "secondary"}
                            className={cn(
-                             "text-[10px] h-5",
-                             student.status === "active" ? "bg-green-600 hover:bg-green-700" : "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-800 dark:text-gray-400"
+                             "text-[10px] h-5 cursor-pointer select-none",
+                             student.status === "ACTIVE" ? "bg-green-600 hover:bg-green-700" : "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-800 dark:text-gray-400"
                            )}
+                           onClick={() => toggleStatus(student)}
                          >
-                           {student.status.toUpperCase()}
+                           {student.status}
                          </Badge>
                       </div>
                       <div className="flex items-center text-xs text-muted-foreground gap-3 mt-1">
                         <span className="flex items-center gap-1">
                           <Mail className="h-3 w-3" /> {student.email}
                         </span>
-                        {student.phone && (
-                          <span className="flex items-center gap-1 hidden sm:flex">
-                            <Phone className="h-3 w-3" /> {student.phone}
-                          </span>
-                        )}
-                        {student.city && (
-                          <span className="flex items-center gap-1 hidden md:flex">
-                            <MapPin className="h-3 w-3" /> {student.city}
-                          </span>
+                        {student.joinedAt && (
+                           <span className="flex items-center gap-1 hidden sm:flex">
+                             {/* Displaying Date */}
+                             Joined: {student.joinedAt.toDate().toLocaleDateString()}
+                           </span>
                         )}
                       </div>
                     </div>
@@ -310,7 +345,7 @@ export default function Learners() {
                     <DropdownMenuContent align="end">
                       <DropdownMenuLabel>Actions</DropdownMenuLabel>
                       <DropdownMenuItem onClick={() => handleViewPerformance(student)}>
-                        <Eye className="mr-2 h-4 w-4" /> View Performance
+                        <Eye className="mr-2 h-4 w-4" /> Performance
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => window.open(`mailto:${student.email}`)}>
                         <Mail className="mr-2 h-4 w-4" /> Send Email
@@ -319,7 +354,7 @@ export default function Learners() {
                       <DropdownMenuSeparator />
                       
                       <DropdownMenuItem onClick={() => toggleStatus(student)}>
-                        {student.status === "active" ? (
+                        {student.status === "ACTIVE" ? (
                           <>
                             <UserX className="mr-2 h-4 w-4 text-amber-600" />
                             <span className="text-amber-600">Deactivate</span>
@@ -338,7 +373,7 @@ export default function Learners() {
                         className="text-red-600 focus:text-red-600" 
                         onClick={() => handleDelete(student.id)}
                       >
-                        <Trash2 className="mr-2 h-4 w-4" /> Delete
+                        <Trash2 className="mr-2 h-4 w-4" /> Remove
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -353,22 +388,21 @@ export default function Learners() {
       <Dialog open={!!selectedStudent} onOpenChange={(open) => !open && setSelectedStudent(null)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Performance Report: {selectedStudent?.name}</DialogTitle>
+            <DialogTitle>Performance: {selectedStudent?.name}</DialogTitle>
           </DialogHeader>
-          
           <div className="mt-4">
              {loadingAttempts ? (
                 <div className="flex justify-center py-8">
                   <Loader2 className="h-6 w-6 animate-spin" />
                 </div>
              ) : attempts.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
+                <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg bg-muted/50">
                   <p>No test attempts found for this student.</p>
                 </div>
              ) : (
                 <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
                   {attempts.map((attempt) => (
-                    <div key={attempt.id} className="flex items-center justify-between p-3 border rounded-lg bg-card">
+                    <div key={attempt.id} className="flex items-center justify-between p-3 border rounded-lg bg-card hover:bg-accent/5">
                        <div>
                          <p className="font-medium text-sm">{attempt.testTitle}</p>
                          <p className="text-xs text-muted-foreground">{attempt.subject} • {attempt.createdAt?.toDate().toLocaleDateString()}</p>
