@@ -12,7 +12,8 @@ import {
   Quote,
   Layout,
   BarChart,
-  ImageIcon
+  ImageIcon,
+  ArrowRight
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,8 @@ import {
   orderBy
 } from "firebase/firestore";
 import { toast } from "sonner";
+import { motion } from "framer-motion";
+import { useTenant } from "@/contexts/TenantProvider";
 
 // --- Types ---
 type StatItem = { label: string; value: string; icon: string };
@@ -65,6 +68,8 @@ export default function WebsiteSettings() {
   // --- NEW: Featured Courses State ---
   const [availableTests, setAvailableTests] = useState<AvailableTest[]>([]); 
   const [featuredTestIds, setFeaturedTestIds] = useState<string[]>([]); 
+
+  const {tenant} = useTenant();
 
   // --- 1. Fetch All Data ---
   useEffect(() => {
@@ -175,6 +180,44 @@ export default function WebsiteSettings() {
 
   return (
     <div className="space-y-6 p-1 max-w-5xl mx-auto">
+
+      {/* Welcome Banner */}
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="gradient-bg rounded-2xl p-6 text-white relative overflow-hidden"
+            >
+              <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4xIj48cGF0aCBkPSJNMzYgMzRoLTJ2LTRoMnYyaDR2MmgtNHYtMnoiLz48L2c+PC9nPjwvc3ZnPg==')] opacity-30" />
+              <div className="relative z-10">
+                <h1 className="text-2xl sm:text-3xl font-display font-bold mb-2">
+                  Welcome back, {tenant.coachingName}! 👋
+                </h1>
+                <p className="text-white/80 text-sm sm:text-base max-w-xl">
+                  Your website is love! on {" "}
+                  <span className="font-semibold text-white">https://{tenant.tenantSlug}.univ.live</span>
+                </p>
+                <div className="flex flex-wrap gap-3 mt-4">
+                  <Button
+                    size="sm"
+                    className="bg-white/20 hover:bg-white/30 text-white border-0"
+                    onClick={() => {
+                      const slug = tenant?.tenantSlug;
+                      if (!slug) {
+                        toast.error("Website not available — tenant slug is missing.");
+                        return;
+                      }
+                      const url = `https://${slug}.univ.live`;
+                      // Open in a new tab safely
+                      window.open(url, "_blank", "noopener,noreferrer");
+                    }}
+                  >
+                    Visit Your Website
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold">Website Builder</h1>
