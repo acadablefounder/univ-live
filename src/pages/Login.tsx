@@ -123,7 +123,7 @@ export default function Login() {
           </div>
 
           {/* Role Toggle Tabs - Only show on Main Domain to reduce confusion */}
-          {true && (
+          {isTenantDomain && (
              <div className="grid grid-cols-2 gap-2 bg-muted p-1 rounded-lg">
                <button
                  onClick={() => setRole("educator")}
@@ -139,6 +139,10 @@ export default function Login() {
                </button>
              </div>
           )}
+
+       
+
+
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">

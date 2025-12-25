@@ -81,7 +81,7 @@ export default function AppRoutes() {
 
           {/* --- PROTECTED EDUCATOR ROUTES (Tenant Admin) --- */}
           <Route
-            path="/dashboard"
+            path="/educator"
             element={
               <RequireRole allow={["EDUCATOR", "ADMIN"]} redirectTo="/login">
                 <EducatorLayout />
@@ -114,7 +114,7 @@ export default function AppRoutes() {
 
           {/* Main Platform Educator Dashboard */}
           <Route
-            path="/dashboard"
+            path="/educator"
             element={
               <RequireRole allow={["EDUCATOR", "ADMIN"]} redirectTo="/login">
                 <EducatorLayout />
