@@ -26,7 +26,7 @@ export default function Theme1CoursesPreview() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!tenant?.id) return;
+    if (!tenant?.educatorId) return;
 
     const fetchCourses = async () => {
       try {
@@ -39,14 +39,14 @@ export default function Theme1CoursesPreview() {
           // Firestore 'in' query supports up to 10 items
           const safeIds = featuredIds.slice(0, 10); 
           q = query(
-            collection(db, "educators", tenant.id, "my_tests"),
+            collection(db, "educators", tenant.educatorId, "my_tests"),
             where(documentId(), "in", safeIds)
           );
         } 
         // CASE B: No selection, show top 4 newest
         else {
           q = query(
-            collection(db, "educators", tenant.id, "my_tests"),
+            collection(db, "educators", tenant.educatorId, "my_tests"),
             orderBy("createdAt", "desc"),
             limit(4)
           );
@@ -55,7 +55,7 @@ export default function Theme1CoursesPreview() {
         const snap = await getDocs(q);
         const fetchedData = snap.docs.map(doc => ({
           id: doc.id,
-          ...doc.data()
+          ...doc.data
         })) as TestSeries[];
 
         setCourses(fetchedData);
