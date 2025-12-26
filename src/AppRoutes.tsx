@@ -137,9 +137,9 @@ export default function AppRoutes() {
           <Route path="dashboard" element={<AdminDashboard />} />
 
           {/* Keeping your current lovable routes to avoid changing your files */}
-          <Route path="testbank" element={<AdminTestBank />} />
-          <Route path="test/new" element={<AdminTestForm />} />
-          <Route path="test/edit/:id" element={<AdminTestForm />} />
+          <Route path="tests" element={<AdminTestBank />} />
+          <Route path="tests/new" element={<AdminTestForm />} />
+          <Route path="tests/edit/:id" element={<AdminTestForm />} />
           <Route path="questions/:testId" element={<AdminQuestions />} />
         </Route>
 
