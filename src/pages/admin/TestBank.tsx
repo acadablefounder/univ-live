@@ -317,7 +317,7 @@ export default function TestBank() {
       });
 
       // optionally open edit
-      navigate(`/admin/tests/${newDocRef.id}/edit`);
+      navigate(`/admin/tests/edit/${newDocRef.id}`);
     } catch (e) {
       console.error(e);
       toast({
@@ -493,11 +493,11 @@ export default function TestBank() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="rounded-xl">
-                        <DropdownMenuItem onClick={() => navigate(`/admin/tests/${t.id}/edit`)}>
+                        <DropdownMenuItem onClick={() => navigate(`/admin/tests/edit/${t.id}`)}>
                           <Pencil className="h-4 w-4 mr-2" />
                           Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => navigate(`/admin/tests/${t.id}/questions`)}>
+                        <DropdownMenuItem onClick={() => navigate(`/admin/questions/${t.id}`)}>
                           <ListChecks className="h-4 w-4 mr-2" />
                           Manage Questions
                         </DropdownMenuItem>
@@ -562,13 +562,13 @@ export default function TestBank() {
                     <Button
                       variant="outline"
                       className="rounded-xl flex-1"
-                      onClick={() => navigate(`/admin/tests/${t.id}/questions`)}
+                      onClick={() => navigate(`/admin/questions/${t.id}`)}
                     >
                       Manage Questions
                     </Button>
                     <Button
                       className="gradient-bg text-white rounded-xl flex-1"
-                      onClick={() => navigate(`/admin/tests/${t.id}/edit`)}
+                      onClick={() => navigate(`/admin/tests/edit/${t.id}`)}
                     >
                       Edit
                     </Button>
