@@ -135,7 +135,7 @@ export default function Signup() {
         await setDoc(doc(db, "educators", user.uid), {
             email,
             coachingName,
-            slug: generatedSlug,
+            tenantSlug: generatedSlug,
             websiteConfig: {}
         });
         
